@@ -1,0 +1,32 @@
+timestamp,company_name,website_url,email_language,tone,greeting_choice,knowledge_choice,offer_choice,demo_choice,goodbye_choice,context_text,subject,body,feedback_text,accepted
+2025-11-27T21:30:43.114000,https://bacdental.com/,https://bacdental.com/,Spanish,Consultative,formal_company,generic_ref,benefit_focused,short_call,formal,"Website: https://bacdental.com/
+Title: Bacdental – Clínica dental en Barcelona
+Headline (H1): CLÍNICA DENTAL EN BARCELONA",Mejora tus decisiones con Power BI,"Estimado equipo de Bacdental,
+
+Hemos estado siguiendo su clínica dental en Barcelona y nos gustaría ayudar a mejorar la eficiencia en la toma de decisiones. Actualmente, muchos equipos se ven limitados por informes manuales en Excel, lo que consume tiempo valioso y puede generar errores.
+
+Nuestros servicios de consultoría en Power BI pueden ayudar a automatizar estos informes y crear paneles de control de fácil acceso, permitiendo a su equipo tomar decisiones más informadas y rápidas.
+
+¿Quieres saber cómo podemos ayudarte? Te propongo una llamada introductoria de 15-20 minutos para discutir tus necesidades y objetivos. ¿Qué te parece el miércoles a las 10:00 am?
+
+Agradezco tu tiempo y espero tu respuesta.
+
+Atentamente,
+[Nombre]",Deberia hablar algo más sobre algo que ponga en su web o algo que pueda tener sentido para el sector,0
+2025-11-27T22:37:22.899716,elevatinganalytics.com,https://elevatinganalytics.com,English,Consultative,formal_company,generic_ref,benefit_focused,short_call,formal,"Website: https://elevatinganalytics.com
+Title: Elevating Analytics | Consultoría Power BI
+Meta description: Servicios de consultoría en Power BI para transformar tus datos en decisiones estratégicas. Informes, análisis y dashboards personalizados de Elevating Analytics.",,"{
+  ""subject"": ""Unlock the Full Potential of Your Data with Power BI"",
+  ""body"": ""Dear [Company] team,
+
+From our research, it appears you have a strong online presence and are looking for innovative solutions to drive business growth.
+
+At Elevating Analytics, we help companies like yours move beyond manual Excel-based reporting to automated, self-service Power BI dashboards. This transformation reduces reporting time, provides clarity, and enables better decision-making.
+
+I'd love to discuss how we can help you achieve these outcomes. Would you be available for a 15-minute introductory call next Wednesday at 2 PM EST? This will give us a chance to explore your current challenges and see if our services align with your goals.
+
+Thank you for considering Elevating Analytics.
+
+Best regards,
+Jaime Fernández-Baca Cordón""
+}","Mal, nunca puede quedar una variable al mandar un email. ejemplo: [Company]. Si no se sabe la empresa, no se pone y se dice dear team. lo mismo para Propose a specific time, e.g., Wednesday at 10 AM EST].",0

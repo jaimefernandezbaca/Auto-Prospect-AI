@@ -1,0 +1,494 @@
+import json
+import re
+import requests
+import streamlit as st
+
+from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
+from urllib.parse import urlparse
+
+
+# ---------------------------------------------------------
+# Streamlit basic config
+# ---------------------------------------------------------
+st.set_page_config(page_title="Prospecting Assistant", layout="wide")
+st.title("Prospecting Assistant for Power BI Services")
+
+
+# ---------------------------------------------------------
+# Sidebar configuration
+# ---------------------------------------------------------
+
+st.sidebar.header("Configuration")
+
+# Groq API config
+if "groq_api_key" not in st.session_state:
+    st.session_state["groq_api_key"] = ""
+
+groq_api_key = st.sidebar.text_input(
+    "Groq API key",
+    type="password",
+    value=st.session_state["groq_api_key"]
+)
+st.session_state["groq_api_key"] = groq_api_key
+
+# Groq model name
+model_name = st.sidebar.text_input(
+    "Groq model name",
+    value="llama-3.1-8b-instant"   # ajusta al modelo que quieras usar en Groq
+)
+
+# Email language
+email_language = st.sidebar.selectbox(
+    "Email language",
+    [
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Portuguese"
+    ],
+    index=0
+)
+
+st.sidebar.markdown("---")
+
+default_value_prop = (
+    "I help companies move from manual Excel-based reporting to automated, "
+    "self-service Power BI dashboards, reducing reporting time and improving "
+    "decision-making."
+)
+
+value_prop = st.sidebar.text_area(
+    "Value proposition to highlight",
+    default_value_prop,
+)
+
+tone = st.sidebar.selectbox(
+    "Tone of the email",
+    ["Professional", "Friendly", "Consultative", "Direct"],
+    index=2,
+)
+
+
+# ---------------------------------------------------------
+# Section configuration options
+# ---------------------------------------------------------
+
+GREETING_OPTIONS = {
+    "formal_company": "Formal greeting addressing the company or team (e.g. 'Dear [Company] team').",
+    "neutral_company": "Neutral greeting mentioning the company name (e.g. 'Hello [Company]').",
+    "friendly": "Friendly greeting as if writing to a potential collaborator (e.g. 'Hi there')."
+}
+
+KNOWLEDGE_OPTIONS = {
+    "generic_ref": "Generic reference to their website and online presence without specific details.",
+    "specific_site": "Specific reference to what we see on their website (e.g. services, focus, locations).",
+    "pain_point_guess": "Mention one or two likely challenges based on their type of business."
+}
+
+OFFER_OPTIONS = {
+    "benefit_focused": "Explain how we help focusing on business outcomes (time savings, clarity, better decisions).",
+    "technical_light": "Short explanation, light on technical details (mentions dashboards, automation, reporting).",
+    "technical_heavier": "Slightly more technical, mentioning Power BI, data models and report automation."
+}
+
+DEMO_OPTIONS = {
+    "short_call": "Propose a short introductory call of 15–20 minutes with one clear time suggestion.",
+    "open_invite": "Ask if they would like to see a quick demo and let them propose a time.",
+    "value_first": "Offer to show a small, relevant example/dashboard tailored to their context before a call."
+}
+
+GOODBYE_OPTIONS = {
+    "formal": "Formal sign-off with thanks and full name.",
+    "warm": "Warm, friendly sign-off but still professional.",
+    "short": "Very short and concise sign-off."
+}
+
+
+# ---------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------
+
+def looks_like_url(text: str) -> bool:
+    """
+    Very simple heuristic to decide if the input looks like a URL/domain.
+    """
+    text = text.strip()
+    if text.startswith("http://") or text.startswith("https://"):
+        return True
+    # Domain-like: "bacaestudiodental.es"
+    if "." in text and " " not in text:
+        return True
+    return False
+
+
+def normalize_url(maybe_url: str) -> str:
+    maybe_url = maybe_url.strip()
+    if maybe_url.startswith("http://") or maybe_url.startswith("https://"):
+        return maybe_url
+    # If only domain, assume https
+    return "https://" + maybe_url
+
+
+def search_company_website(company: str) -> str:
+    """
+    1) If the user input looks like a URL/domain, use it directly.
+    2) Otherwise, use DuckDuckGo to find the official website.
+    """
+    company = company.strip()
+
+    # 1. Direct URL/domain
+    if looks_like_url(company):
+        return normalize_url(company)
+
+    # 2. Search via DuckDuckGo
+    query = f"{company} official website"
+
+    try:
+        with DDGS() as ddgs:
+            results = ddgs.text(query, max_results=5)
+            for r in results:
+                url = r.get("href") or r.get("link")
+                if not url:
+                    continue
+
+                bad_domains = [
+                    "linkedin.com",
+                    "facebook.com",
+                    "instagram.com",
+                    "twitter.com",
+                    "x.com",
+                    "glassdoor.com",
+                    "indeed.com",
+                    "linkedin.",
+                ]
+                if any(bad in url.lower() for bad in bad_domains):
+                    continue
+
+                return url
+    except Exception as e:
+        st.error(f"Error searching website: {e}")
+
+    return ""
+
+
+def fetch_website_info(url: str) -> dict:
+    """
+    Fetch basic information from a company website: title, meta description,
+    first H1 headline and generic emails.
+    Uses browser-like headers to avoid basic bot blocking (406, etc.).
+    """
+    if not url:
+        return {}
+
+    # Normalize URL in case it comes without scheme
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            st.warning(f"Could not fetch website (status {resp.status_code}).")
+            return {}
+
+        html = resp.text
+
+    except Exception as e:
+        st.error(f"Error fetching website: {e}")
+        return {}
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Title
+    title = ""
+    if soup.title and soup.title.string:
+        title = soup.title.string.strip()
+
+    # Meta description
+    description = ""
+    description_tag = soup.find("meta", attrs={"name": "description"})
+    if description_tag and description_tag.get("content"):
+        description = description_tag["content"].strip()
+
+    # First H1
+    h1_text = ""
+    h1 = soup.find("h1")
+    if h1:
+        h1_text = h1.get_text(strip=True)
+
+    # Emails in HTML
+    emails = set(
+        re.findall(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            html,
+        )
+    )
+    generic_emails = [
+        e
+        for e in emails
+        if any(x in e.lower() for x in ["info@", "contact@", "sales@", "support@"])
+    ]
+
+    return {
+        "url": url,
+        "title": title,
+        "description": description,
+        "headline": h1_text,
+        "emails": generic_emails,
+    }
+
+
+def generate_email_with_groq(
+    groq_api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    """
+    Call Groq's chat completions API (OpenAI-compatible style)
+    and return the raw string content.
+    """
+    if not groq_api_key:
+        raise ValueError("Groq API key is missing.")
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.4,
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+
+    return data["choices"][0]["message"]["content"]
+
+
+# ---------------------------------------------------------
+# 1. Company name input
+# ---------------------------------------------------------
+st.markdown("### 1. Search company")
+
+company_name = st.text_input(
+    "Company name or website",
+    placeholder="e.g. Acme Ltd or https://bacaestudiodental.es/"
+)
+
+if st.button("Search website"):
+    if not company_name:
+        st.error("Please enter a company name or website.")
+    else:
+        with st.spinner("Searching company website..."):
+            website_url = search_company_website(company_name)
+
+        if not website_url:
+            st.warning(
+                "No website found. Check the company name or try another search."
+            )
+        else:
+            st.success(f"Website found: {website_url}")
+            st.session_state["website_url"] = website_url
+
+
+website_url = st.session_state.get("website_url", "")
+
+
+# ---------------------------------------------------------
+# 2. Fetch and review website info
+# ---------------------------------------------------------
+if website_url:
+    st.markdown("### 2. Review and select information to use")
+
+    if st.button("Fetch website info"):
+        info = fetch_website_info(website_url)
+        st.session_state["company_info"] = info
+
+info = st.session_state.get("company_info", {})
+
+if info:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Fields to use as context")
+
+        use_url = st.checkbox("Use website URL", value=True)
+        use_title = st.checkbox("Use title", value=True)
+        use_description = st.checkbox("Use meta description", value=True)
+        use_headline = st.checkbox("Use main headline (H1)", value=True)
+
+        selected_emails = []
+        st.subheader("Emails found")
+        if info["emails"]:
+            for email in info["emails"]:
+                if st.checkbox(
+                    f"Use email: {email}", value=True, key=f"email_{email}"
+                ):
+                    selected_emails.append(email)
+        else:
+            st.write("No generic emails found on the page.")
+
+    with col2:
+        st.subheader("Raw info preview")
+        st.write("Website:", info["url"])
+        st.write("Title:", info["title"])
+        st.write("Meta description:", info["description"])
+        st.write("Headline (H1):", info["headline"])
+
+
+    # -----------------------------------------------------
+    # 3. Section styles + Generate email (using Groq)
+    # -----------------------------------------------------
+    st.markdown("### 3. Configure sections and generate email")
+
+    st.markdown("**Section styles**")
+
+    greeting_choice = st.selectbox(
+        "Greeting style",
+        options=list(GREETING_OPTIONS.keys()),
+        format_func=lambda k: GREETING_OPTIONS[k]
+    )
+
+    knowledge_choice = st.selectbox(
+        "What we know about them",
+        options=list(KNOWLEDGE_OPTIONS.keys()),
+        format_func=lambda k: KNOWLEDGE_OPTIONS[k]
+    )
+
+    offer_choice = st.selectbox(
+        "How we can help / what we offer",
+        options=list(OFFER_OPTIONS.keys()),
+        format_func=lambda k: OFFER_OPTIONS[k]
+    )
+
+    demo_choice = st.selectbox(
+        "How to propose a demo / next step",
+        options=list(DEMO_OPTIONS.keys()),
+        format_func=lambda k: DEMO_OPTIONS[k]
+    )
+
+    goodbye_choice = st.selectbox(
+        "Goodbye / sign-off style",
+        options=list(GOODBYE_OPTIONS.keys()),
+        format_func=lambda k: GOODBYE_OPTIONS[k]
+    )
+
+    if st.button("Generate cold email"):
+
+        if not groq_api_key:
+            st.error("Please enter your Groq API key in the sidebar.")
+        else:
+            context_parts = []
+            if use_url and info.get("url"):
+                context_parts.append(f"Website: {info['url']}")
+            if use_title and info.get("title"):
+                context_parts.append(f"Title: {info['title']}")
+            if use_description and info.get("description"):
+                context_parts.append(f"Meta description: {info['description']}")
+            if use_headline and info.get("headline"):
+                context_parts.append(f"Headline (H1): {info['headline']}")
+
+            context_text = "\n".join(context_parts)
+
+            greeting_desc = GREETING_OPTIONS[greeting_choice]
+            knowledge_desc = KNOWLEDGE_OPTIONS[knowledge_choice]
+            offer_desc = OFFER_OPTIONS[offer_choice]
+            demo_desc = DEMO_OPTIONS[demo_choice]
+            goodbye_desc = GOODBYE_OPTIONS[goodbye_choice]
+
+            system_prompt = (
+                "You are an expert B2B sales copywriter who always returns valid JSON. "
+                "You write clear, concise, value-driven cold emails."
+            )
+
+            user_prompt = f"""
+Your task is to write a short cold email to offer Power BI consulting services.
+
+Language:
+- Write the entire email in: {email_language}.
+
+Constraints:
+- Max 120 words.
+- Tone: {tone}.
+- 1 clear CTA.
+- Do not be generic — use the context when relevant.
+- Keep the copy sharp and value-driven.
+
+Company name: {company_name}
+
+Context from the website:
+{context_text}
+
+Value proposition to highlight:
+{value_prop}
+
+STRUCTURE REQUIRED (in this exact order):
+
+1. Greeting:
+   - Style: {greeting_desc}
+
+2. What we know about them:
+   - Style: {knowledge_desc}
+
+3. How we can help / what we offer:
+   - Style: {offer_desc}
+
+4. How to propose a demo / next step:
+   - Style: {demo_desc}
+
+5. Goodbye / sign-off:
+   - Style: {goodbye_desc}
+
+Return ONLY a valid JSON object:
+{{
+  "subject": "...",
+  "body": "..."
+}}
+No explanations, no markdown, no extra text.
+"""
+
+            with st.spinner("Generating email using Groq…"):
+                try:
+                    raw = generate_email_with_groq(
+                        groq_api_key=groq_api_key,
+                        model=model_name,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                    )
+                except Exception as e:
+                    st.error(f"Error calling Groq API: {e}")
+                    raw = ""
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                st.warning("Model did not return valid JSON. Showing raw output.")
+                data = {"subject": "", "body": raw}
+
+            subject = data.get("subject", "")
+            body = data.get("body", "")
+
+            st.success("Email generated.")
+            st.text_input("Subject", value=subject, key="email_subject")
+            st.text_area("Body", value=body, height=220, key="email_body")
