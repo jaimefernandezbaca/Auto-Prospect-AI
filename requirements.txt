@@ -1,5 +1,7 @@
-streamlit==1.51.0
-requests==2.32.5
-beautifulsoup4==4.14.2
-ddgs==9.9.1
-duckduckgo-search==8.1.1
+streamlit
+requests
+beautifulsoup4
+lxml
+ddgs
+groq
+python-dotenv
