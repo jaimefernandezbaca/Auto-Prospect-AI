@@ -5,3 +5,5 @@ lxml
 ddgs
 groq
 python-dotenv
+urllib3>=2.0.0
+brotli
