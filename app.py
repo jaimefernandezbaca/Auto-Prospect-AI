@@ -1008,6 +1008,8 @@ if info:
 
         if not value_prop.strip():
             st.error("Please enter your value proposition in the sidebar before generating the email.")
+        elif sender_name.strip() == "" or sender_name.strip().lower() == "your name".lower():
+            st.error("Please enter the name you want to use in the signature.")
         elif not groq_api_key:
             st.error("Please enter your Groq API key in the sidebar.")
         else:
