@@ -62,6 +62,19 @@ st.markdown(
         background-color: #16a34a;
         color: #ffffff !important;
     }
+
+    .section-hint {
+        color: #475569;
+        font-size: 0.95rem;
+        margin-top: -0.5rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .optional-note {
+        color: #6366f1;
+        font-style: italic;
+        font-size: 0.95rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -617,6 +630,10 @@ def save_search_feedback_row(filename: str, row: dict) -> None:
 # 1. Search company + sector
 # ---------------------------------------------------------
 st.markdown("### 1. Search company")
+st.markdown(
+    '<p class="section-hint">Start by identifying a company or website so we can pull the right context.</p>',
+    unsafe_allow_html=True,
+)
 
 company_name = st.text_input(
     "Company name or website",
@@ -653,6 +670,10 @@ search_results = st.session_state.get("search_results", [])
 
 if search_results:
     st.markdown("### 1b. Select website")
+    st.markdown(
+        '<p class="section-hint">Choose the domain that best matches your target.</p>',
+        unsafe_allow_html=True,
+    )
 
     def format_candidate(idx: int) -> str:
         c = search_results[idx]
@@ -682,6 +703,10 @@ if search_results:
         st.success(f"Selected website: {selected['url']}")
 
     st.markdown("### 1c. Feedback about the search results")
+    st.markdown(
+        '<p class="optional-note">Optional: Let us know if these candidates were useful.</p>',
+        unsafe_allow_html=True,
+    )
     search_feedback_text = st.text_area(
         "Feedback about the website suggestions (what worked, what didn't)",
         key="search_feedback_note"
@@ -731,12 +756,18 @@ if search_results:
 
 website_url = st.session_state.get("website_url", "")
 
+st.divider()
+
 
 # ---------------------------------------------------------
 # 2. Fetch and review website info
 # ---------------------------------------------------------
 if website_url:
     st.markdown("### 2. Review and select information to use")
+    st.markdown(
+        '<p class="section-hint">Scan the site and decide which details the AI should reference.</p>',
+        unsafe_allow_html=True,
+    )
 
     if st.button("Fetch website info"):
         info = fetch_website_info(website_url)
@@ -777,7 +808,12 @@ if info:
     # -----------------------------------------------------
     # 3. Configure sections and generate email (using Groq)
     # -----------------------------------------------------
+    st.divider()
     st.markdown("### 3. Configure sections and generate email")
+    st.markdown(
+        '<p class="section-hint">Pick the narrative style, confirm your value proposition, and let Groq draft the message.</p>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("**Section styles**")
 
@@ -929,7 +965,12 @@ No explanations, no markdown, no extra text.
     # -----------------------------------------------------
     # 4. Feedback & save to CSV
     # -----------------------------------------------------
+    st.divider()
     st.markdown("### 4. Feedback and save example")
+    st.markdown(
+        '<p class="optional-note">Optional: Capture what worked so you can train future prompts.</p>',
+        unsafe_allow_html=True,
+    )
 
     feedback_text = st.text_area(
         "Optional feedback about this email (what you like, what you'd change, etc.)",
@@ -1019,7 +1060,12 @@ No explanations, no markdown, no extra text.
     # -----------------------------------------------------
     # 5. Send email (opens your mail client)
     # -----------------------------------------------------
+    st.divider()
     st.markdown("### 5. Send email (opens your mail client)")
+    st.markdown(
+        '<p class="section-hint">When you like the copy, preview or send it via your default email client.</p>',
+        unsafe_allow_html=True,
+    )
 
     # If multiple emails were selected, default to all of them
     default_to = ""
