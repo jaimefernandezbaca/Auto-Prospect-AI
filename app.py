@@ -848,7 +848,7 @@ if info:
             )
 
             user_prompt = f"""
-Your task is to write a short cold email to offer Power BI consulting services.
+Your task is to write a short cold email tailored to the value proposition described below.
 
 Language:
 - Write the entire email in: {email_language}.
@@ -865,7 +865,7 @@ Company name: {company_name}
 Context from the website:
 {context_text}
 
-Value proposition to highlight:
+Value proposition to highlight (use this to understand the offer we sell):
 {value_prop}
 
 STRUCTURE REQUIRED (in this exact order):
