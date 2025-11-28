@@ -15,10 +15,23 @@ from datetime import datetime
 
 
 # ---------------------------------------------------------
+# Clear cached data/session so prior test data is hidden
+# ---------------------------------------------------------
+CACHE_CLEARED_FLAG = "__cache_cleared__"
+
+if CACHE_CLEARED_FLAG not in st.session_state:
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.session_state[CACHE_CLEARED_FLAG] = True
+
+
+# ---------------------------------------------------------
 # Streamlit basic config
 # ---------------------------------------------------------
-st.set_page_config(page_title="Prospecting Assistant", layout="wide")
-st.title("Prospecting Assistant for Power BI Services")
+st.set_page_config(page_title="🤖 Prospecting Assistant", page_icon="🤖", layout="wide")
+st.title("🤖 Prospecting Assistant")
 
 st.markdown(
     """
@@ -72,7 +85,8 @@ if "groq_api_key" not in st.session_state:
 
 groq_api_key = st.sidebar.text_input(
     "Groq API key",
-    value=st.session_state["groq_api_key"]
+    value=st.session_state["groq_api_key"],
+    help="❓ Create a free key at https://console.groq.com (API Keys > Create API Key)."
 )
 st.session_state["groq_api_key"] = groq_api_key
 
@@ -98,15 +112,10 @@ email_language = st.sidebar.selectbox(
 
 st.sidebar.markdown("---")
 
-default_value_prop = (
-    "I help companies move from manual Excel-based reporting to automated, "
-    "self-service Power BI dashboards, reducing reporting time and improving "
-    "decision-making."
-)
-
 value_prop = st.sidebar.text_area(
     "Value proposition to highlight",
-    default_value_prop,
+    value="",
+    placeholder="Describe the service you're offering (e.g., \"We build custom AI automations for brokers\").",
 )
 
 tone = st.sidebar.selectbox(
@@ -611,7 +620,7 @@ st.markdown("### 1. Search company")
 
 company_name = st.text_input(
     "Company name or website",
-    placeholder="e.g. Acme Ltd or https://bacaestudiodental.es/"
+    placeholder="e.g. ExampleCorp or https://example.com"
 )
 
 sector_choice = st.selectbox(
@@ -810,7 +819,9 @@ if info:
 
     if st.button("Generate cold email"):
 
-        if not groq_api_key:
+        if not value_prop.strip():
+            st.error("Please enter your value proposition in the sidebar before generating the email.")
+        elif not groq_api_key:
             st.error("Please enter your Groq API key in the sidebar.")
         else:
             context_parts = []
