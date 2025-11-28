@@ -7,7 +7,7 @@ import html
 
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, urljoin
 
 import os
 import csv
@@ -413,6 +413,79 @@ def search_company_websites(
     return unique[:max_results]
 
 
+EMAIL_REGEX = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+OBFUSCATED_AT_PATTERNS = [
+    r"\[at\]",
+    r"\(at\)",
+    r"\sat\s",
+]
+OBFUSCATED_DOT_PATTERNS = [
+    r"\[dot\]",
+    r"\(dot\)",
+    r"\sdot\s",
+]
+
+
+def extract_emails_from_text(text: str) -> set[str]:
+    emails = set(re.findall(EMAIL_REGEX, text, flags=re.IGNORECASE))
+
+    for mailto_match in re.findall(r"mailto:([^\"'>\s]+)", text, flags=re.IGNORECASE):
+        clean = mailto_match.split("?")[0].strip()
+        if re.match(EMAIL_REGEX, clean, flags=re.IGNORECASE):
+            emails.add(clean)
+
+    obfuscated_matches = re.findall(
+        r"[A-Za-z0-9._%+-]+\s?(?:\(|\[)?at(?:\)|\])?\s?[A-Za-z0-9.-]+(?:\s?(?:\(|\[)?dot(?:\)|\])?\s?[A-Za-z]{2,})+",
+        text,
+        flags=re.IGNORECASE,
+    )
+    for candidate in obfuscated_matches:
+        normalized = candidate
+        for pattern in OBFUSCATED_AT_PATTERNS:
+            normalized = re.sub(pattern, "@", normalized, flags=re.IGNORECASE)
+        for pattern in OBFUSCATED_DOT_PATTERNS:
+            normalized = re.sub(pattern, ".", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\s+", "", normalized)
+        if re.match(EMAIL_REGEX, normalized, flags=re.IGNORECASE):
+            emails.add(normalized)
+
+    return {email.lower() for email in emails}
+
+
+INTERNAL_LINK_KEYWORDS = [
+    "contact", "contacto", "contacts", "support", "soporte", "sales", "team",
+    "about", "nosotros", "quienes", "services", "servicios", "solutions",
+    "equipo", "company", "empresa", "clients", "clientes", "partners",
+    "cases", "case", "portfolio", "careers", "jobs", "locations", "sucursales",
+]
+
+
+def discover_internal_links(base_url: str, base_domain: str, soup: BeautifulSoup, max_links: int = 8) -> list[str]:
+    discovered = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href or href.startswith("#") or href.lower().startswith("mailto:"):
+            continue
+
+        anchor_text = a.get_text(" ", strip=True).lower()
+        href_lower = href.lower()
+
+        if not any(keyword in anchor_text or keyword in href_lower for keyword in INTERNAL_LINK_KEYWORDS):
+            continue
+
+        full_url = urljoin(base_url, href)
+        parsed = urlparse(full_url)
+        if not parsed.scheme or not parsed.netloc:
+            continue
+        if parsed.netloc != base_domain:
+            continue
+        if full_url not in discovered:
+            discovered.append(full_url)
+        if len(discovered) >= max_links:
+            break
+    return discovered
+
+
 def fetch_website_info(url: str) -> dict:
     """
     Busca título, descripción, H1 y emails.
@@ -443,22 +516,33 @@ def fetch_website_info(url: str) -> dict:
         "/about",
         "/about-us",
         "/quienes-somos",
+        "/team",
+        "/equipo",
+        "/services",
+        "/servicios",
+        "/solutions",
+        "/company",
+        "/nosotros",
+        "/support",
+        "/soporte",
+        "/careers",
+        "/careers/",
+        "/jobs",
+        "/locations",
     ]
     for p in common_paths:
         candidate_paths.add(p)
 
-    urls_to_check = []
+    urls_to_check: list[str] = []
+    seen_planned = set()
     for p in candidate_paths:
         if p == initial_path:
             full_url = url
         else:
-            if p.startswith("http"):
-                full_url = p
-            else:
-                if not p.startswith("/"):
-                    p = "/" + p
-                full_url = base + p
-        urls_to_check.append(full_url)
+            full_url = urljoin(base, p)
+        if full_url not in seen_planned:
+            urls_to_check.append(full_url)
+            seen_planned.add(full_url)
 
     headers = {
         "User-Agent": (
@@ -474,8 +558,19 @@ def fetch_website_info(url: str) -> dict:
     title = ""
     description = ""
     h1_text = ""
+    secondary_headings: list[str] = []
+    key_paragraphs: list[str] = []
+    bullet_points: list[str] = []
+    checked_urls: list[str] = []
 
-    for full_url in urls_to_check:
+    visited = set()
+    max_pages = 10
+
+    while urls_to_check and len(visited) < max_pages:
+        full_url = urls_to_check.pop(0)
+        if full_url in visited:
+            continue
+
         try:
             resp = requests.get(full_url, headers=headers, timeout=10)
             if resp.status_code != 200:
@@ -483,6 +578,8 @@ def fetch_website_info(url: str) -> dict:
 
             html = resp.text
             html_pages.append(html)
+            visited.add(full_url)
+            checked_urls.append(full_url)
 
             if not title and not description and not h1_text:
                 soup = BeautifulSoup(html, "html.parser")
@@ -493,10 +590,49 @@ def fetch_website_info(url: str) -> dict:
                 description_tag = soup.find("meta", attrs={"name": "description"})
                 if description_tag and description_tag.get("content"):
                     description = description_tag["content"].strip()
+                if not description:
+                    og_desc = soup.find("meta", attrs={"property": "og:description"})
+                    if og_desc and og_desc.get("content"):
+                        description = og_desc["content"].strip()
 
                 h1 = soup.find("h1")
                 if h1:
                     h1_text = h1.get_text(strip=True)
+            else:
+                soup = BeautifulSoup(html, "html.parser")
+
+            for heading in soup.find_all(["h2", "h3"]):
+                text = heading.get_text(" ", strip=True)
+                if not text:
+                    continue
+                if text not in secondary_headings:
+                    secondary_headings.append(text)
+                if len(secondary_headings) >= 6:
+                    break
+
+            for p_tag in soup.find_all("p"):
+                text = p_tag.get_text(" ", strip=True)
+                if len(text) < 50:
+                    continue
+                if text not in key_paragraphs:
+                    key_paragraphs.append(text)
+                if len(key_paragraphs) >= 4:
+                    break
+
+            for li in soup.find_all("li"):
+                text = li.get_text(" ", strip=True)
+                if 30 <= len(text) <= 220 and text not in bullet_points:
+                    bullet_points.append(text)
+                if len(bullet_points) >= 6:
+                    break
+
+            if len(urls_to_check) < max_pages:
+                extra_links = discover_internal_links(base, parsed.netloc, soup, max_links=6)
+                for extra_url in extra_links:
+                    if extra_url not in visited and extra_url not in urls_to_check:
+                        urls_to_check.append(extra_url)
+                    if len(urls_to_check) >= max_pages:
+                        break
 
         except Exception:
             continue
@@ -507,19 +643,18 @@ def fetch_website_info(url: str) -> dict:
 
     aggregated_html = "\n".join(html_pages)
 
-    emails = set(
-        re.findall(
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-            aggregated_html,
-        )
-    )
+    emails = extract_emails_from_text(aggregated_html)
 
     return {
         "url": url,
         "title": title,
         "description": description,
         "headline": h1_text,
-        "emails": list(emails),
+        "secondary_headlines": secondary_headings[:6],
+        "key_paragraphs": key_paragraphs[:4],
+        "bullet_points": bullet_points[:6],
+        "emails": sorted(list(emails)),
+        "checked_urls": checked_urls,
     }
 
 
@@ -799,10 +934,26 @@ if info:
 
     with col2:
         st.subheader("Raw info preview")
-        st.write("Website:", info["url"])
-        st.write("Title:", info["title"])
-        st.write("Meta description:", info["description"])
-        st.write("Headline (H1):", info["headline"])
+        st.write("Website:", info.get("url", ""))
+        st.write("Title:", info.get("title", ""))
+        st.write("Meta description:", info.get("description", ""))
+        st.write("Headline (H1):", info.get("headline", ""))
+
+        if info.get("secondary_headlines"):
+            st.write("Supporting headlines:")
+            st.markdown("\n".join(f"- {text}" for text in info["secondary_headlines"]))
+
+        if info.get("key_paragraphs"):
+            st.write("Key paragraphs:")
+            for para in info["key_paragraphs"]:
+                st.markdown(f"> {para}")
+
+        if info.get("bullet_points"):
+            st.write("Service highlights:")
+            st.markdown("\n".join(f"- {item}" for item in info["bullet_points"]))
+
+        if info.get("checked_urls"):
+            st.caption(f"Pages scanned: {len(info['checked_urls'])}")
 
 
     # -----------------------------------------------------
