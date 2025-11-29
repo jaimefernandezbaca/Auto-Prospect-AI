@@ -5,3 +5,7 @@ git pull origin main --allow-unrelated-histories
 git add .
 git commit -m "Backup v2"
 git push
+
+
+nombre de commit:
+git log -1 --pretty=format:"%H %s"
