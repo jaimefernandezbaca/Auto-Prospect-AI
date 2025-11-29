@@ -12,3 +12,4 @@ st.set_page_config(
 
 # Renderiza toda la UI
 render_page()
+
