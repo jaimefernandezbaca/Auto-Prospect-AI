@@ -3,7 +3,5 @@ Rest/
 *.env
 *.json
 __pycache__/
-app2.py
-*.csv
-functions/
-layout/
+
+
